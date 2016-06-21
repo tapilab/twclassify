@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pickle
 import re
-from sklearn.cross_validation import KFold
+from sklearn.cross_validation import StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -136,7 +136,7 @@ class TextClassifier:
         self.vectorizer = vectorizer
 
     def cv(self, data, X, labels, n_folds=5, random_state=42, verbose=True):
-        cv = KFold(len(labels), n_folds, random_state=random_state)
+        cv = StratifiedKFold(labels, n_folds, random_state=random_state)
         truths = []
         preds = []
         for train, test in cv:
@@ -155,12 +155,11 @@ class TextClassifier:
              'roc_auc': roc_auc_score(binary_truths, binary_preds)
              }
         if verbose:
-            print(classification_report(truths, preds))
-            print(self.confusion(truths, preds, self.clf.classes_))
-            self.clf.fit(X, labels)
+            self.fit(X, labels)
             self.top_terms()
             print('\n')
-            self.top_error_terms(truths, preds, X, data)
+            if data is not None:
+                self.top_error_terms(truths, preds, X, data)
         return results
 
     def fit(self, X, labels):
@@ -174,6 +173,8 @@ class TextClassifier:
 
     def confusion(self, truths, preds, labels):
         m = confusion_matrix(truths, preds)
+        print('confusion=%s' % str(m))
+        print('labels=%s' % str(labels))
         m = np.vstack((labels, m))
         m = np.hstack((np.matrix([''] + list(labels)).T, m))
         return tabulate(m.tolist(), headers='firstrow')
