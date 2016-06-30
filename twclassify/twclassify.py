@@ -23,15 +23,17 @@ punc_re = '[' + re.escape(string.punctuation) + ']'
 
 class TextVectorizer:
 
-    def __init__(self, feature_fields, target_field, lc=True,
+    def __init__(self, feature_fields, target_field, lc=True, binary=False,
                  merge_field_features=False, rt_prefix=True, ignore_rt=False,
                  min_df=2, max_df=1., ngram_range=(1,1), use_idf=True, norm='l1',
                  collapse_hashtags=False, collapse_mentions=True, collapse_urls=True,
-                 limit_repeats=True, retain_punc_toks=True, collapse_digits=False):
+                 limit_repeats=True, retain_punc_toks=True, collapse_digits=False,
+                 pretokenizers=[]):
         self.feature_fields = feature_fields
         self.target_field = target_field
         self.merge_field_features = merge_field_features
         self.lc = lc
+        self.binary = binary
         self.rt_prefix = rt_prefix
         self.ignore_rt = ignore_rt
         self.min_df = min_df
@@ -45,6 +47,12 @@ class TextVectorizer:
         self.limit_repeats = limit_repeats
         self.retain_punc_toks = retain_punc_toks
         self.collapse_digits = collapse_digits
+        self.pretokenizers = pretokenizers
+
+    def pretokenize(self, text):
+        for pretok in self.pretokenizers:
+            text = pretok(text)
+        return text
 
     def tokenize(self, features):
         tokens = []
@@ -63,6 +71,7 @@ class TextVectorizer:
 
     def _tokenize(self, text):
         text = '' if not text else text
+        text = self.pretokenize(text)
         text = text.lower() if self.lc else text
         if self.collapse_hashtags:
             text = re.sub('#\S+', 'THIS_IS_A_HASHTAG', text)
@@ -117,7 +126,7 @@ class TextVectorizer:
 
         labels = []
         if fit:
-            self.vec = TfidfVectorizer(token_pattern='\S+', min_df=self.min_df, max_df = self.max_df,
+            self.vec = TfidfVectorizer(token_pattern='\S+', min_df=self.min_df, max_df = self.max_df, binary = self.binary,
                                        ngram_range=self.ngram_range, use_idf=self.use_idf, norm=self.norm)
             X = self.vec.fit_transform(toks for toks, label in iter_data(data) if not labels.append(label))
             self.features = np.array(self.vec.get_feature_names())
@@ -135,7 +144,7 @@ class TextClassifier:
         self.clf = clf
         self.vectorizer = vectorizer
 
-    def cv(self, data, X, labels, n_folds=5, random_state=42, verbose=True):
+    def cv(self, data, X, labels, n_folds=5, random_state=42, verbose=True, poslabel='guess'):
         cv = StratifiedKFold(labels, n_folds, random_state=random_state)
         truths = []
         preds = []
@@ -143,8 +152,8 @@ class TextClassifier:
             self.clf.fit(X[train], labels[train])
             preds.extend(self.clf.predict(X[test]))
             truths.extend(labels[test])
-        binary_truths = self.to_binary(truths)
-        binary_preds = self.to_binary(preds)
+        binary_truths = self.to_binary(truths, poslabel)
+        binary_preds = self.to_binary(preds, poslabel)
         results = \
             {'accuracy': accuracy_score(truths, preds),
              'f1_pos': f1_score(binary_truths, binary_preds),
@@ -155,6 +164,8 @@ class TextClassifier:
              'roc_auc': roc_auc_score(binary_truths, binary_preds)
              }
         if verbose:
+            print(self.confusion(truths, preds, self.clf.classes_))
+            print(classification_report(truths, preds))
             self.fit(X, labels)
             self.top_terms()
             print('\n')
@@ -168,13 +179,14 @@ class TextClassifier:
     def predict(self, X):
         return self.clf.predict(X)
 
-    def to_binary(self, labels):
-        return np.array([1 if t.lower() == 'yes' or t.lower() == 'positive' or t.lower() == '1' else 0 for t in labels])
+    def to_binary(self, labels, poslabel):
+        if poslabel == 'guess':
+            return np.array([1 if t.lower() == 'yes' or t.lower() == 'positive' or t.lower() == '1' else 0 for t in labels])
+        else:
+            return np.array([1 if t == poslabel else 0 for t in labels])
 
     def confusion(self, truths, preds, labels):
         m = confusion_matrix(truths, preds)
-        print('confusion=%s' % str(m))
-        print('labels=%s' % str(labels))
         m = np.vstack((labels, m))
         m = np.hstack((np.matrix([''] + list(labels)).T, m))
         return tabulate(m.tolist(), headers='firstrow')
@@ -219,7 +231,7 @@ class ParameterSweeper:
         self.random_state = random_state
         self.n_folds = n_folds
 
-    def sweep(self, data, vectorizer_parms, classifier_parms):
+    def sweep(self, data, vectorizer_parms, classifier_parms, poslabel='guess'):
         results = []
         for vec_parms in self.iter_parms(vectorizer_parms):
             tv = TextVectorizer(**vec_parms)
@@ -232,7 +244,7 @@ class ParameterSweeper:
                     clf = clf_constructor(**clf_parms)
                     tc = TextClassifier(tv, clf)
                     result = tc.cv(data, X, labels, n_folds=self.n_folds,
-                                   random_state=self.random_state, verbose=False)
+                                   random_state=self.random_state, verbose=False, poslabel=poslabel)
                     results.append((result, vec_parms, clf_parms, clf_constructor))
             print('best macro_f1 so far:')
             display(self.print_top_parameters('macro_f1', results, n=1, transpose=False))
