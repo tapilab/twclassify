@@ -212,15 +212,28 @@ class TextClassifier:
             iserror = np.zeros(len(truths))
             ind = [i for i, (t, p) in enumerate(zip(truths, preds)) if t != p and p == label]
             iserror[ind] = 1
-            F, pval = f_classif(X, iserror)
-            for fidx in np.argsort(F)[::-1][:5]:
-                print('\n\t%s %d' % (self.vectorizer.features[fidx], X[ind, fidx].nnz))
+            corrs, _ = f_classif(X, iserror)
+            pos_mask, pos_counts, neg_counts = self.get_pos_mask(X, iserror)
+            corrs *= pos_mask
+            for fidx in np.argsort(corrs)[::-1][:5]:
+                print('\n\t%s (%d incorrect, %d correct)' %
+                      (self.vectorizer.features[fidx], pos_counts[fidx], neg_counts[fidx]))
                 matches = []
                 for midx in range(X.shape[0]):
                     if X[midx, fidx] > 0 and iserror[midx] == 1:
                         matches.append(midx)
                 for m in matches[:3]:
                     print('\t\t' + str(self.vectorizer.extract_features(data[m])))
+
+    def get_pos_mask(self, X, y, reg=1):
+        """Get mask for indices that are more associated with class 1 than class 0."""
+        pos_counts = X.sign()[np.where(y == 1)].sum(axis=0).A1
+        neg_counts = X.sign()[np.where(y == 0)].sum(axis=0).A1
+        posp = (1. + pos_counts) / pos_counts.sum()
+        negp = (1. + neg_counts) / neg_counts.sum()
+        diffs = posp - negp
+        diffs = np.array([1 if v > 0 else -1 for v in diffs])
+        return np.array(diffs), pos_counts, neg_counts
 
     def __repr__(self):
         return str(self.vectorizer) + '\n' + str(self.clf)
