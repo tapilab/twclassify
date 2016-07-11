@@ -70,6 +70,16 @@ class TextVectorizer:
         return ' '.join(tokens)
 
     def _tokenize(self, text):
+        """
+        >>> TextVectorizer(None, None, collapse_mentions=False)._tokenize("hi @there mister")
+        ['hi', 'MENTION_there', 'mister']
+        >>> TextVectorizer(None, None, collapse_mentions=True)._tokenize("hi @there mister")
+        ['hi', 'THIS_IS_A_MENTION', 'mister']
+        >>> TextVectorizer(None, None, collapse_hashtags=False)._tokenize("hi #there mister")
+        ['hi', 'HASHTAG_there', 'mister']
+        >>> TextVectorizer(None, None, collapse_hashtags=True)._tokenize("hi #there mister")
+        ['hi', 'THIS_IS_A_HASHTAG', 'mister']
+        """
         text = '' if not text else text
         text = self.pretokenize(text)
         text = text.lower() if self.lc else text
@@ -79,6 +89,8 @@ class TextVectorizer:
             text = re.sub('#(\S+)', r'HASHTAG_\1', text)
         if self.collapse_mentions:
             text = re.sub('@\S+', 'THIS_IS_A_MENTION', text)
+        else:
+            text = re.sub('@(\S+)', r'MENTION_\1', text)
         if self.collapse_urls:
             text = re.sub('http\S+', 'THIS_IS_A_URL', text)
         if self.limit_repeats:
@@ -101,8 +113,8 @@ class TextVectorizer:
 
     def extract_feature(self, dict_obj, field):
         """ Walk a dict to extract features.
-        >>> extract_features({'a': [{'b': 1}, {'b': 2}], 'c': 3}, ['a.b', 'c'])
-        {'a.b': [1, 2], 'c': 3}
+        >>> TextVectorizer(None, None).extract_feature({'a': [{'b': 1}, {'b': 2}], 'c': 3}, 'a.b')
+        [1, 2]
         """
         parts = field.split('.')
         for pi, p in enumerate(parts):
