@@ -13,7 +13,7 @@ from sklearn.feature_extraction import DictVectorizer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.feature_selection import f_classif
 from sklearn.linear_model import LinearRegression, LogisticRegression
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score, precision_score, recall_score, roc_auc_score
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score, precision_score, recall_score, roc_auc_score, fbeta_score
 from sklearn.naive_bayes import MultinomialNB
 import string
 from tabulate import tabulate
@@ -158,17 +158,27 @@ class TextClassifier:
 
     def cv(self, data, X, labels, n_folds=5, random_state=42, verbose=True, poslabel='guess'):
         cv = StratifiedKFold(labels, n_folds, random_state=random_state)
-        truths = []
-        preds = []
+        truths = np.array([None] * len(labels))
+        preds = np.array([None] * len(labels))
         for train, test in cv:
             self.clf.fit(X[train], labels[train])
-            preds.extend(self.clf.predict(X[test]))
-            truths.extend(labels[test])
+            preds[test] = self.clf.predict(X[test])
+            truths[test] = labels[test]
         binary_truths = self.to_binary(truths, poslabel)
         binary_preds = self.to_binary(preds, poslabel)
         results = \
             {'accuracy': accuracy_score(truths, preds),
              'f1_pos': f1_score(binary_truths, binary_preds),
+             'fbeta.01': fbeta_score(binary_truths, binary_preds, beta=.01),
+             'fbeta.1': fbeta_score(binary_truths, binary_preds, beta=.1),
+             'fbeta.3': fbeta_score(binary_truths, binary_preds, beta=.3),
+             'fbeta.5': fbeta_score(binary_truths, binary_preds, beta=.5),
+             'fbeta.7': fbeta_score(binary_truths, binary_preds, beta=.7),
+             'fbeta2': fbeta_score(binary_truths, binary_preds, beta=2),
+             'fbeta3': fbeta_score(binary_truths, binary_preds, beta=3),
+             'fbeta5': fbeta_score(binary_truths, binary_preds, beta=5),
+             'fbeta7': fbeta_score(binary_truths, binary_preds, beta=7),
+             'fbeta10': fbeta_score(binary_truths, binary_preds, beta=10),
              'macro_f1': f1_score(truths, preds, average='macro', pos_label=None),
              'micro_f1': f1_score(truths, preds, average='micro', pos_label=None),
              'recall': recall_score(binary_truths, binary_preds),
