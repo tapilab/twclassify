@@ -21,7 +21,7 @@ test_requirements = [
 
 setup(
     name='twclassify',
-    version='0.1.1',
+    version='0.1.2',
     description=".",
     long_description=readme + '\n\n' + history,
     author="Aron Culotta",
